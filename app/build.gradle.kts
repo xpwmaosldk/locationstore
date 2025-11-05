@@ -2,8 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp") version "2.0.21-1.0.28" // Room KSP 플러그인
-    id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin") version "2.0.1" // Maps 시크릿 플러그인
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.maps.secrets.gradle.plugin)
 }
 
 android {
@@ -60,23 +60,18 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // ViewModel for Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // WorkManager for background tasks
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation(libs.androidx.work.runtime.ktx)
 
-    // Room for local database
-    implementation("androidx.room:room-runtime:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1") // 코루틴 지원
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.room.ktx) // 코루틴 지원
 
-    // Google Maps for Compose
-    implementation("com.google.maps.android:maps-compose:4.3.0")
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation(libs.google.maps.compose)
+    implementation(libs.google.play.services.maps)
 
-    // FusedLocationProvider for getting current location
-    implementation("com.google.android.gms:play-services-location:21.2.0")
+    implementation(libs.google.play.services.location)
 
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.navigation.compose)
 }

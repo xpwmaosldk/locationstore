@@ -36,12 +36,10 @@ class MapViewModel(
     private val _workStatus = MutableSharedFlow<String>()
     val workStatus = _workStatus.asSharedFlow()
 
-    // ★★★ 1. 로딩 상태를 관리하는 StateFlow 추가
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // ★★★ 2. 새로 추가된 위치 정보를 전달할 SharedFlow 추가
-    // StateFlow 대신 SharedFlow를 사용하여 일회성 이벤트를 전달
     private val _newLocation = MutableSharedFlow<LocationEntity>()
     val newLocation = _newLocation.asSharedFlow()
 
@@ -84,7 +82,7 @@ class MapViewModel(
         }
     }
 }
-// ViewModelFactory도 WorkManager를 전달하도록 수정
+
 class MapViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MapViewModel::class.java)) {

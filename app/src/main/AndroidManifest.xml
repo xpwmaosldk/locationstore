@@ -18,10 +18,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LocationStore">
 
-        <!-- Google Maps API 키 설정 -->
+        <!-- Google Maps API 키 설정 (테스트를 위해 키 공개, 추후 삭제 예정)-->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}" />
+            android:value="AIzaSyC8by-rYlM5DWP-n3we9SGKk7vt1v7desA" />
 
         <activity
             android:name=".MainActivity"

@@ -52,11 +52,11 @@ fun MapScreen(
     navController: NavController // ★★★ NavController를 파라미터로 받음
 ) {
     val locations by viewModel.locations.collectAsState()
-    // ★★★ ViewModel에서 로딩 상태 구독
+
     val isLoading by viewModel.isLoading.collectAsState()
 
     val seoul = LatLng(37.5665, 126.9780)
-    // ★★★ 카메라 상태를 rememberCoroutineScope와 함께 제어하기 위해 cameraPositionState를 상위로 이동
+
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(seoul, 10f)
     }
@@ -73,7 +73,7 @@ fun MapScreen(
         }
     }
 
-    // ★★★ 새로운 위치가 발생했을 때 카메라를 이동시키는 LaunchedEffect
+
     LaunchedEffect(Unit) {
         viewModel.newLocation.collectLatest { location ->
             coroutineScope.launch {
@@ -88,19 +88,6 @@ fun MapScreen(
         }
     }
 
-//    val locations by viewModel.locations.collectAsState()
-//    val seoul = LatLng(37.5665, 126.9780)
-//    val cameraPositionState = rememberCameraPositionState {
-//        position = CameraPosition.fromLatLngZoom(seoul, 10f)
-//    }
-//
-//    val snackbarHostState = remember { SnackbarHostState() }
-//
-//    LaunchedEffect(Unit) {
-//        viewModel.workStatus.collectLatest { message ->
-//            snackbarHostState.showSnackbar(message)
-//        }
-//    }
 
     Scaffold(
         topBar = {
@@ -172,7 +159,7 @@ fun MapScreen(
     }
 }
 
-// ★★★ MapScreen에서도 시간 포맷이 필요하므로, 동일한 함수 추가 또는 별도 파일로 분리
+
 private fun formatTimestamp(timestamp: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(timestamp))

@@ -22,7 +22,7 @@ class LocationWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
 
-    // ★★★ 디버깅을 위한 TAG 추가
+
     private val TAG = "LocationWorker"
 
     private val locationClient = LocationServices.getFusedLocationProviderClient(context)
