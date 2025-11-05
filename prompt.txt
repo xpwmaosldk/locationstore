@@ -1,0 +1,2418 @@
+* 사용 AI: Gemini 2.5 Pro
+* '# user'로 검색 시 사용한 프롬프트 확인 가능
+
+
+
+
+
+# user
+다음 요구사항과 유의사항을 만족하는 프로젝트를 안드로이드 스튜디오를 활용해 개발 하려합니다. 초기설정부터 api 발급등 자세한 방법을 기술하세요.
+
+요구사항
+
+'현 위치' 버튼을 클릭하면 현재 위치를 WorkManager로 조회합니다.
+
+조회된 위치 정보는 Room 로컬 DB에 저장합니다.
+
+Room 로컬 DB에 저장된 정보를 가지고 와서 지도뷰에 마커 표시를 합니다.
+
+MVVM 아키텍쳐, 컴포즈를 활용하세요.
+
+유의사항
+
+과제물은 Kotlin으로 작성해야 합니다.
+
+지도는 원하는 플랫폼(구글, 네이버, 카카오 등)을 자유롭게 선택하여 사용해주세요.
+
+백그라운드 처리가 꼭 포함되어야 합니다.
+
+위치 정보는 로컬 DB로 관리합니다.
+
+UI 구성은 자유롭게 개발합니다.
+
+지도뷰 이해도를 확인합니다.
+
+
+--------------------------------------------------
+
+
+# model
+안드로이드 스튜디오 프로젝트 개발 가이드 (요구사항 기반)
+
+안녕하세요. 요청하신 요구사항과 유의사항을 모두 만족하는 안드로이드 프로젝트 개발 방법을 초기 설정부터 API 발급, 코드 작성까지 단계별로 상세히 안내해 드리겠습니다.
+
+여기서는 가장 대중적인 Google 지도를 기준으로 설명하겠습니다.
+
+목차
+
+1단계: 프로젝트 초기 설정 및 의존성 추가
+
+2단계: Google Maps API 키 발급 및 설정
+
+3단계: Data Layer - Room DB 설정 (Entity, DAO, Database)
+
+4단계: Background 처리 - WorkManager 설정
+
+5단계: Domain Layer - Repository 구현
+
+6단계: Presentation Layer - ViewModel 및 UI(Compose) 구현
+
+7단계: 권한 요청 및 전체 구조 연결 (MainActivity)
+
+1단계: 프로젝트 초기 설정 및 의존성 추가
+
+새 프로젝트 생성
+
+Android Studio를 열고 New Project를 선택합니다.
+
+Empty Activity (Compose) 템플릿을 선택하고 Next를 누릅니다.
+
+프로젝트 이름(예: LocationMarkerApp), 패키지 이름, 저장 위치를 설정하고 Finish를 누릅니다.
+
+build.gradle.kts (모듈 수준) 파일에 의존성 추가
+app/build.gradle.kts 파일을 열고 plugins와 dependencies 블록에 다음 코드를 추가합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+plugins {
+    // ... 기존 플러그인
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17" // Room KSP 플러그인
+    id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin") // Maps 시크릿 플러그인
+}
+
+android {
+    // ...
+}
+
+dependencies {
+    // Core & Compose
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation(platform("androidx.compose:compose-bom:2024.02.02"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+
+    // ViewModel for Compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+
+    // WorkManager for background tasks
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // Room for local database
+    implementation("androidx.room:room-runtime:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1") // 코루틴 지원
+
+    // Google Maps for Compose
+    implementation("com.google.maps.android:maps-compose:4.3.0")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+
+    // FusedLocationProvider for getting current location
+    implementation("com.google.android.gms:play-services-location:21.2.0")
+
+    // ... Test dependencies
+}
+
+KSP: Room의 코드를 컴파일 타임에 생성해주는 어노테이션 프로세서입니다. kapt보다 빠릅니다.
+
+secrets-gradle-plugin: API 키를 안전하게 관리하기 위한 플러그인입니다.
+
+2단계: Google Maps API 키 발급 및 설정
+
+Google Cloud Console에서 API 키 받기
+
+Google Cloud Console로 이동하여 새 프로젝트를 생성하거나 기존 프로젝트를 선택합니다.
+
+왼쪽 메뉴에서 API 및 서비스 > 라이브러리로 이동합니다.
+
+**Maps SDK for Android**를 검색하여 '사용 설정' 합니다.
+
+API 및 서비스 > 사용자 인증 정보로 이동합니다.
+
+**'+ 사용자 인증 정보 만들기' > 'API 키'**를 선택하여 키를 생성합니다.
+
+생성된 API 키를 반드시 제한해야 합니다. 키를 클릭하고 '애플리케이션 제한사항'에서 'Android 앱'을 선택한 후, '+ 항목 추가'를 눌러 앱의 패키지 이름과 SHA-1 인증서 지문을 추가합니다.
+
+SHA-1 지문은 터미널에서 ./gradlew signingReport 명령어로 확인할 수 있습니다.
+
+API 키 프로젝트에 추가
+
+프로젝트의 루트 디렉터리에 local.properties 파일이 있는지 확인하고, 없다면 생성합니다.
+
+local.properties 파일에 발급받은 API 키를 다음과 같이 추가합니다.
+
+code
+Properties
+download
+content_copy
+expand_less
+MAPS_API_KEY=YOUR_API_KEY_HERE
+
+AndroidManifest.xml 설정
+
+app/src/main/AndroidManifest.xml 파일을 열고 <application> 태그 내부에 다음 메타데이터를 추가합니다.
+
+code
+Xml
+download
+content_copy
+expand_less
+<application
+    ...>
+
+    <!-- Google Maps API 키 설정 -->
+    <meta-data
+        android:name="com.google.android.geo.API_KEY"
+        android:value="${MAPS_API_KEY}" />
+
+    <activity ...>
+        ...
+    </activity>
+</application>
+
+권한 추가
+
+AndroidManifest.xml 파일의 <manifest> 태그 안에 다음 권한들을 추가합니다.
+
+code
+Xml
+download
+content_copy
+expand_less
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<!-- 안드로이드 10 (API 29) 이상에서 백그라운드 위치 접근을 위해 필요 -->
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+3단계: Data Layer - Room DB 설정 (Entity, DAO, Database)
+
+데이터를 저장할 로컬 데이터베이스를 구성합니다.
+
+Entity (테이블 정의)
+data/local 패키지를 생성하고 LocationEntity.kt 파일을 만듭니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/local/LocationEntity.kt
+package com.example.locationmarkerapp.data.local
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "locations")
+data class LocationEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val latitude: Double,
+    val longitude: Double,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+DAO (Data Access Object)
+data/local 패키지에 LocationDao.kt 파일을 만듭니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/local/LocationDao.kt
+package com.example.locationmarkerapp.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface LocationDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLocation(location: LocationEntity)
+
+    @Query("SELECT * FROM locations ORDER BY timestamp DESC")
+    fun getAllLocations(): Flow<List<LocationEntity>>
+}
+
+Flow를 사용하면 DB가 변경될 때마다 UI에 자동으로 업데이트를 보낼 수 있습니다.
+
+Database (데이터베이스 클래스)
+data/local 패키지에 AppDatabase.kt 파일을 만듭니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/local/AppDatabase.kt
+package com.example.locationmarkerapp.data.local
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(entities = [LocationEntity::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun locationDao(): LocationDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "location_database"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+4단계: Background 처리 - WorkManager 설정
+
+버튼을 클릭했을 때 백그라운드에서 현재 위치를 가져와 DB에 저장하는 Worker를 만듭니다.
+
+LocationWorker 생성
+worker 패키지를 만들고 LocationWorker.kt 파일을 생성합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// worker/LocationWorker.kt
+package com.example.locationmarkerapp.worker
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.example.locationmarkerapp.data.local.AppDatabase
+import com.example.locationmarkerapp.data.local.LocationEntity
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
+
+class LocationWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    private val locationClient = LocationServices.getFusedLocationProviderClient(context)
+    private val locationDao = AppDatabase.getDatabase(context).locationDao()
+
+    override suspend fun doWork(): Result {
+        // 위치 권한 확인
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.e("LocationWorker", "Location permission not granted")
+            return Result.failure()
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val location = getCurrentLocation()
+                if (location != null) {
+                    val locationEntity = LocationEntity(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                    locationDao.insertLocation(locationEntity)
+                    Log.d("LocationWorker", "Location saved: $locationEntity")
+                    Result.success()
+                } else {
+                    Log.e("LocationWorker", "Failed to get location")
+                    Result.failure()
+                }
+            } catch (e: Exception) {
+                Log.e("LocationWorker", "Exception in doWork", e)
+                Result.failure()
+            }
+        }
+    }
+
+    // FusedLocationProviderClient API를 코루틴에 맞게 변환
+    private suspend fun getCurrentLocation(): android.location.Location? {
+        return suspendCoroutine { continuation ->
+            try {
+                locationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    CancellationTokenSource().token
+                ).addOnSuccessListener { location ->
+                    continuation.resume(location)
+                }.addOnFailureListener { e ->
+                    Log.e("LocationWorker", "Location fetch failed", e)
+                    continuation.resume(null)
+                }
+            } catch (e: SecurityException) {
+                Log.e("LocationWorker", "Location permission security exception", e)
+                continuation.resume(null)
+            }
+        }
+    }
+}
+5단계: Domain Layer - Repository 구현
+
+ViewModel과 데이터 소스(Room, WorkManager) 사이의 중개자 역할을 하는 Repository를 만듭니다.
+
+LocationRepository 생성
+data 패키지에 LocationRepository.kt 파일을 생성합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/LocationRepository.kt
+package com.example.locationmarkerapp.data
+
+import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.locationmarkerapp.data.local.LocationDao
+import com.example.locationmarkerapp.worker.LocationWorker
+import kotlinx.coroutines.flow.Flow
+
+class LocationRepository(
+    private val locationDao: LocationDao,
+    private val context: Context
+) {
+    val allLocations: Flow<List<com.example.locationmarkerapp.data.local.LocationEntity>> = locationDao.getAllLocations()
+
+    fun requestLocationUpdate() {
+        // 일회성 WorkManager 작업 요청
+        val workRequest = OneTimeWorkRequestBuilder<LocationWorker>().build()
+        WorkManager.getInstance(context).enqueue(workRequest)
+    }
+}
+6단계: Presentation Layer - ViewModel 및 UI(Compose) 구현
+
+UI의 상태를 관리하고 비즈니스 로직을 처리하는 ViewModel과 실제 화면을 그리는 Compose UI를 작성합니다.
+
+MapViewModel 및 ViewModelFactory 생성
+ui 패키지를 만들고 MapViewModel.kt 파일을 생성합니다. Repository를 주입받기 위해 ViewModelProvider.Factory도 함께 구현합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapViewModel.kt
+package com.example.locationmarkerapp.ui
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.locationmarkerapp.data.LocationRepository
+import com.example.locationmarkerapp.data.local.AppDatabase
+import com.example.locationmarkerapp.data.local.LocationEntity
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+
+class MapViewModel(private val repository: LocationRepository) : ViewModel() {
+
+    val locations: StateFlow<List<LocationEntity>> = repository.allLocations
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun fetchCurrentLocation() {
+        repository.requestLocationUpdate()
+    }
+}
+
+class MapViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MapViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            val database = AppDatabase.getDatabase(application)
+            val repository = LocationRepository(database.locationDao(), application)
+            return MapViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+UI(Compose) 화면 구성
+ui 패키지에 MapScreen.kt 파일을 생성합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapScreen.kt
+package com.example.locationmarkerapp.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+
+@Composable
+fun MapScreen(viewModel: MapViewModel) {
+    val locations by viewModel.locations.collectAsState()
+    // 서울을 기본 위치로 설정
+    val seoul = LatLng(37.5665, 126.9780)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(seoul, 10f)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState
+        ) {
+            locations.forEach { location ->
+                Marker(
+                    state = MarkerState(position = LatLng(location.latitude, location.longitude)),
+                    title = "저장된 위치",
+                    snippet = "시간: ${location.timestamp}"
+                )
+            }
+        }
+
+        Button(
+            onClick = { viewModel.fetchCurrentLocation() },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        ) {
+            Text(text = "현 위치 조회 및 저장")
+        }
+    }
+}
+7단계: 권한 요청 및 전체 구조 연결 (MainActivity)
+
+마지막으로 MainActivity에서 권한을 요청하고, ViewModel을 생성하여 MapScreen과 연결합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// MainActivity.kt
+package com.example.locationmarkerapp
+
+import android.Manifest
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import com.example.locationmarkerapp.ui.MapScreen
+import com.example.locationmarkerapp.ui.MapViewModel
+import com.example.locationmarkerapp.ui.MapViewModelFactory
+import com.example.locationmarkerapp.ui.theme.LocationMarkerAppTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val mapViewModel: MapViewModel by viewModels {
+        MapViewModelFactory(application)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            LocationMarkerAppTheme {
+                // 위치 권한 요청 런처
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    // 권한 결과를 처리할 수 있습니다. (예: 권한 거부 시 UI 피드백)
+                }
+
+                // 앱 시작 시 권한 요청
+                LaunchedEffect(Unit) {
+                    val permissionsToRequest = mutableListOf(
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        permissionsToRequest.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
+                    permissionLauncher.launch(permissionsToRequest.toTypedArray())
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MapScreen(viewModel = mapViewModel)
+                }
+            }
+        }
+    }
+}
+최종 실행 및 확인
+
+이제 앱을 실제 기기나 에뮬레이터에서 실행합니다. (Google Play 서비스가 설치된 환경이어야 합니다.)
+
+앱이 시작되면 위치 권한 요청 팝업이 나타납니다. 권한을 허용합니다. (백그라운드 위치는 '항상 허용'을 선택해야 WorkManager가 제대로 동작합니다.)
+
+화면 하단의 '현 위치 조회 및 저장' 버튼을 클릭합니다.
+
+WorkManager가 백그라운드에서 현재 위치를 조회하여 Room DB에 저장합니다.
+
+Room DB에 데이터가 저장되면 Flow가 이를 감지하고, ViewModel의 StateFlow가 업데이트됩니다.
+
+Compose UI는 StateFlow의 변경을 감지하여 지도 위에 즉시 마커를 표시합니다.
+
+버튼을 다른 장소에서 여러 번 누르면, 지도에 여러 개의 마커가 표시되는 것을 확인할 수 있습니다.
+
+이것으로 요구사항을 모두 만족하는 프로젝트의 개발이 완료되었습니다. 각 단계의 코드는 MVVM 아키텍처에 따라 명확하게 분리되어 유지보수와 확장이 용이합니다.
+
+
+--------------------------------------------------
+
+
+# user
+Location permission not granted 오류를 해결하세요
+
+
+--------------------------------------------------
+
+
+# model
+네, 'Location permission not granted' 오류는 안드로이드 10 (Q) 이상에서 강화된 위치 권한 정책 때문에 매우 흔하게 발생하는 문제입니다. 특히 WorkManager가 백그라운드에서 동작하기 때문에, 단순히 포그라운드 권한만으로는 부족하며 백그라운드 위치 권한까지 사용자가 직접 허용해야 합니다.
+
+오류의 핵심 원인과 해결책을 단계별로 설명해 드리겠습니다.
+
+오류의 핵심 원인
+
+권한 요청 시점과 작업 실행 시점의 불일치: 기존 코드는 앱 시작 시 권한을 요청하지만, 사용자가 권한을 부여하기 전에 '현 위치 조회' 버튼을 누르면 권한이 없는 상태에서 Worker가 실행되어 오류가 발생합니다.
+
+백그라운드 위치 권한 부재: 안드로이드 10 이상에서는 ACCESS_BACKGROUND_LOCATION 권한을 별도로, 그리고 더 까다로운 방식으로 요청해야 합니다. 포그라운드 권한과 동시에 요청할 수 없으며, 사용자가 직접 설정으로 이동하여 '항상 허용'을 선택해야 하는 경우가 많습니다.
+
+사용자 경험(UX) 부족: 권한이 없는 상태에서 버튼이 활성화되어 있고, 왜 기능이 동작하지 않는지에 대한 안내가 없습니다.
+
+해결 방안: 권한 확인 로직 강화 및 사용자 안내
+
+아래의 수정된 코드는 다음 로직을 따릅니다.
+
+버튼 클릭 시 권한을 확인합니다.
+
+포그라운드 권한 (ACCESS_FINE_LOCATION)이 없다면 먼저 요청합니다.
+
+포그라운드 권한이 있다면 백그라운드 권한 (ACCESS_BACKGROUND_LOCATION)을 확인합니다.
+
+백그라운드 권한이 없다면 사용자에게 왜 필요한지 설명하고 설정으로 이동하도록 안내합니다.
+
+모든 권한이 있을 때만 WorkManager 작업을 시작합니다.
+
+UI에 현재 권한 상태를 반영하여 사용자에게 피드백을 줍니다. (예: 권한이 없으면 버튼 비활성화)
+
+1단계: MainActivity 수정
+
+MainActivity.kt를 권한 처리의 중심으로 만들고, UI(Compose)에 필요한 상태와 콜백을 전달하도록 수정합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// MainActivity.kt
+package com.example.locationmarkerapp
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
+import com.example.locationmarkerapp.ui.MapScreen
+import com.example.locationmarkerapp.ui.MapViewModel
+import com.example.locationmarkerapp.ui.MapViewModelFactory
+import com.example.locationmarkerapp.ui.theme.LocationMarkerAppTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val mapViewModel: MapViewModel by viewModels {
+        MapViewModelFactory(application)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            LocationMarkerAppTheme {
+                // 권한 상태를 관리하는 State
+                var hasLocationPermission by remember {
+                    mutableStateOf(hasRequiredPermissions())
+                }
+
+                // 백그라운드 권한 요청 다이얼로그 표시 여부
+                var showBackgroundPermissionDialog by remember { mutableStateOf(false) }
+
+                // 권한 요청 런처
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    // 권한 요청 후 상태 갱신
+                    hasLocationPermission = hasRequiredPermissions()
+                    // 포그라운드 권한은 얻었지만 백그라운드 권한이 없다면 다이얼로그 표시
+                    if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true &&
+                        !hasBackgroundPermission() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        showBackgroundPermissionDialog = true
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MapScreen(
+                        viewModel = mapViewModel,
+                        hasPermission = hasLocationPermission,
+                        onRequestPermission = {
+                            // 버튼 클릭 시 권한 확인 및 요청 로직
+                            if (hasRequiredPermissions()) {
+                                // 모든 권한이 있으면 작업 실행
+                                mapViewModel.fetchCurrentLocation()
+                            } else {
+                                val permissionsToRequest = mutableListOf(
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                )
+                                // Android 10 (Q) 이상에서는 백그라운드 권한도 요청 목록에 추가
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    permissionsToRequest.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                }
+                                permissionLauncher.launch(permissionsToRequest.toTypedArray())
+                            }
+                        }
+                    )
+                }
+
+                // 백그라운드 권한 안내 다이얼로그
+                if (showBackgroundPermissionDialog) {
+                    BackgroundPermissionDialog(
+                        onDismiss = { showBackgroundPermissionDialog = false },
+                        onConfirm = {
+                            showBackgroundPermissionDialog = false
+                            // 앱 설정 화면으로 이동
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", packageName, null)
+                                startActivity(this)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // 앱이 포그라운드로 돌아올 때마다 권한 상태를 다시 확인
+    override fun onResume() {
+        super.onResume()
+        // 상태를 직접 바꾸지 않고, Compose가 재구성되도록 트리거할 방법을 찾아야 하지만
+        // 여기서는 간단하게 설명하기 위해 이 방식을 사용합니다.
+        // 더 나은 방법은 Lifecycle Event를 Compose에서 관찰하는 것입니다.
+    }
+
+    private fun hasRequiredPermissions(): Boolean {
+        return hasFineLocationPermission() && hasBackgroundPermission()
+    }
+
+    private fun hasFineLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasBackgroundPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            // Android Q 미만에서는 별도 권한이 필요 없음
+            true
+        }
+    }
+}
+
+// 백그라운드 권한 안내를 위한 별도의 Composable 함수
+@Composable
+fun BackgroundPermissionDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("백그라운드 위치 권한 필요") },
+        text = { Text("이 앱이 항상 위치를 추적하여 지도에 표시하려면 위치 권한을 '항상 허용'으로 설정해야 합니다.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("설정으로 이동")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소")
+            }
+        }
+    )
+}
+2단계: MapScreen 수정
+
+MainActivity로부터 권한 상태(hasPermission)와 권한 요청 함수(onRequestPermission)를 전달받아 UI를 제어하도록 수정합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapScreen.kt
+package com.example.locationmarkerapp.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+
+@Composable
+fun MapScreen(
+    viewModel: MapViewModel,
+    hasPermission: Boolean, // 권한 상태를 전달 받음
+    onRequestPermission: () -> Unit // 권한 요청 함수를 전달 받음
+) {
+    val locations by viewModel.locations.collectAsState()
+    val seoul = LatLng(37.5665, 126.9780)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(seoul, 10f)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState
+        ) {
+            locations.forEach { location ->
+                Marker(
+                    state = MarkerState(position = LatLng(location.latitude, location.longitude)),
+                    title = "저장된 위치",
+                    snippet = "시간: ${location.timestamp}"
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (!hasPermission) {
+                Text(
+                    text = "위치 정보를 가져오려면 위치 권한을 '항상 허용'으로 설정해주세요.",
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            Button(
+                // onClick을 onRequestPermission으로 변경
+                onClick = onRequestPermission,
+            ) {
+                // 권한 상태에 따라 버튼 텍스트 변경
+                val buttonText = if (hasPermission) "현 위치 조회 및 저장" else "권한 요청하기"
+                Text(text = buttonText)
+            }
+        }
+    }
+}
+3단계: AndroidManifest.xml 확인
+
+AndroidManifest.xml에 백그라운드 위치 권한이 선언되어 있는지 다시 한번 확인합니다.
+
+code
+Xml
+download
+content_copy
+expand_less
+<manifest ...>
+    ...
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- 이 권한이 반드시 있어야 합니다 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <application ...>
+        ...
+    </application>
+</manifest>
+요약 및 실행 흐름
+
+앱 실행: MainActivity는 현재 권한 상태를 확인하여 hasLocationPermission 상태를 초기화합니다.
+
+UI 표시: MapScreen은 hasPermission이 false이므로 "권한 요청하기" 버튼과 안내 문구를 표시합니다.
+
+사용자가 버튼 클릭: onRequestPermission 람다 함수가 호출됩니다.
+
+권한 요청: MainActivity의 permissionLauncher가 실행되어 사용자에게 권한 허용 팝업을 띄웁니다.
+
+안드로이드 11 이상: 포그라운드 권한과 백그라운드 권한 요청이 분리되어 나타납니다. '앱 사용 중에만 허용'을 선택할 수 있습니다.
+
+권한 결과 처리: 사용자가 선택하면 런처의 콜백이 실행됩니다. hasLocationPermission 상태가 업데이트됩니다.
+
+백그라운드 권한 필요 시: 사용자가 '앱 사용 중에만 허용'을 선택한 경우, hasBackgroundPermission()은 여전히 false입니다. 이 때 showBackgroundPermissionDialog가 true가 되어 설정으로 이동하라는 안내 팝업이 뜹니다.
+
+사용자가 설정 이동: 사용자가 '설정으로 이동'을 누르면 앱 설정 화면으로 이동하여 직접 권한을 '항상 허용'으로 변경할 수 있습니다.
+
+모든 권한 획득: 사용자가 모든 권한을 허용한 후 다시 버튼을 누르면, hasRequiredPermissions()가 true를 반환하므로 mapViewModel.fetchCurrentLocation()이 호출되어 WorkManager 작업이 정상적으로 시작됩니다.
+
+이처럼 권한 상태를 명확하게 추적하고, 각 단계에 맞는 적절한 UI 피드백과 안내를 제공함으로써 'Permission denied' 오류를 해결하고 사용자 경험을 크게 향상시킬 수 있습니다.
+
+
+--------------------------------------------------
+
+
+# user
+시작시 팝업도 안나오고 권한요청하기 눌러도 다음과 같은 로그만 나오고 반응이 없습니다
+
+code
+Code
+download
+content_copy
+expand_less
+2025-11-05 14:13:27.658 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            I  ViewPostIme pointer 0
+2025-11-05 14:13:27.661 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            I  call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@636e481
+2025-11-05 14:13:27.670 10713-10713 View                    com.example.locationstore            I  setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{ea383f VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:3314 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:1949 android.view.View.draw:26153 android.view.View.updateDisplayListIfDirty:24990 android.view.ViewGroup.recreateChildDisplayList:4759 
+2025-11-05 14:13:27.671 10713-10713 View                    com.example.locationstore            I  setRequestedFrameRate frameRate=NaN, this=android.view.View{9864d75 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:3314 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:1950 android.view.View.draw:26153 android.view.View.updateDisplayListIfDirty:24990 android.view.ViewGroup.recreateChildDisplayList:4759 
+2025-11-05 14:13:27.722 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            I  ViewPostIme pointer 1
+2025-11-05 14:13:27.731 10713-10713 View                    com.example.locationstore            I  setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{ea383f VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:3314 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:1949 android.view.View.draw:26153 android.view.View.updateDisplayListIfDirty:24990 android.view.ViewGroup.recreateChildDisplayList:4759 
+2025-11-05 14:13:27.731 10713-10713 View                    com.example.locationstore            I  setRequestedFrameRate frameRate=NaN, this=android.view.View{9864d75 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:3314 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:1950 android.view.View.draw:26153 android.view.View.updateDisplayListIfDirty:24990 android.view.ViewGroup.recreateChildDisplayList:4759 
+2025-11-05 14:13:27.752 10713-10713 ImeFocusController      com.example.locationstore            I  onPreWindowFocus: skipped hasWindowFocus=false mHasImeFocus=true
+2025-11-05 14:13:27.753 10713-10713 ImeFocusController      com.example.locationstore            I  onPostWindowFocus: skipped hasWindowFocus=false mHasImeFocus=true
+2025-11-05 14:13:27.760 10713-10713 BLASTBufferQueue_Java   com.example.locationstore            I  update, w= 1440 h= 3120 mName = VRI[MainActivity]@636e481 mNativeObject= 0xb400006e9c34c610 sc.mNativeObject= 0xb40000700c332f90 format= -1 caller= android.view.ViewRootImpl.updateBlastSurfaceIfNeeded:3379 android.view.ViewRootImpl.relayoutWindow:11355 android.view.ViewRootImpl.performTraversals:4537 android.view.ViewRootImpl.doTraversal:3701 android.view.ViewRootImpl$TraversalRunnable.run:12533 android.view.Choreographer$CallbackRecord.run:1751 
+2025-11-05 14:13:27.760 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            I  Relayout returned: old=(0,0,1440,3120) new=(0,0,1440,3120) relayoutAsync=true req=(1440,3120)0 dur=0 res=0x0 s={true 0xb400006e5c377c60} ch=false seqId=0
+2025-11-05 14:13:27.760 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            I  registerCallbackForPendingTransactions
+2025-11-05 14:13:27.760 10713-10739 VRI[MainAc...y]@636e481 com.example.locationstore            I  mWNT: t=0xb400006e3c36f910 mBlastBufferQueue=0xb400006e9c34c610 fn= 269 HdrRenderState mRenderHdrSdrRatio=1.0 caller= android.view.ViewRootImpl$9.onFrameDraw:6272 android.view.ViewRootImpl$3.onFrameDraw:2437 android.view.ThreadedRenderer$1.onFrameDraw:761 
+2025-11-05 14:13:27.770 10713-10713 VRI[MainAc...y]@636e481 com.example.locationstore            D  mThreadedRenderer.initializeIfNeeded()#2 mSurface={isValid=true 0xb400006e5c377c60}
+2025-11-05 14:13:27.770 10713-10713 InputMethodManagerUtils com.example.locationstore            D  startInputInner - Id : 0
+2025-11-05 14:13:27.770 10713-10713 InputMethodManager      com.example.locationstore            I  startInputInner - IInputMethodManagerGlobalInvoker.startInputOrWindowGainedFocus
+2025-11-05 14:13:27.772 10713-10727 InputTransport          com.example.locationstore            D  Input channel constructed: 'ClientS', fd=218
+
+
+--------------------------------------------------
+
+
+#model
+안녕하세요. 제공해주신 로그와 현상을 보니, 권한 요청 시스템이 아예 동작하지 않는 것으로 보입니다. 로그 자체에는 오류가 없으며, UI가 렌더링되는 정상적인 과정만 보입니다. 이는 권한 요청 로직이 실행되지 않았거나, 시스템에 의해 무시되었음을 의미합니다.
+
+가장 유력한 원인은 다음과 같습니다.
+
+사용자가 이전에 권한을 거부하며 '다시 묻지 않음'을 선택한 경우: 이 경우, 안드로이드 시스템은 개발자가 launch()를 호출해도 권한 요청 팝업을 띄우지 않고 즉시 거부 결과를 반환합니다. 앱은 이 상태를 감지하고 사용자에게 직접 설정으로 이동하도록 안내해야 합니다.
+
+AndroidManifest.xml에 권한이 누락된 경우: 가장 기본적인 원인입니다. 다시 한번 확인이 필요합니다.
+
+앱 시작 시 권한을 요청하는 로직 부재: 현재 코드는 버튼을 눌렀을 때만 권한을 요청하므로, 앱 시작 시에는 아무런 동작이 없는 것이 정상입니다. 더 나은 사용자 경험을 위해 시작 시에도 요청하는 것이 좋습니다.
+
+이 문제들을 해결하기 위해 MainActivity의 권한 처리 로직을 대폭 강화하겠습니다. 아래 코드로 MainActivity.kt를 전체 교체해주세요. 훨씬 안정적이고 사용자 친화적으로 동작할 것입니다.
+
+해결책: shouldShowRequestPermissionRationale을 활용한 완전한 권한 처리 로직
+
+아래 코드는 다음을 수행합니다.
+
+앱 시작 시 권한을 확인하고, 없으면 바로 요청합니다.
+
+사용자가 **'다시 묻지 않음'**을 선택했는지(shouldShowRequestPermissionRationale) 확인합니다.
+
+상황에 맞는 정확한 안내 다이얼로그(권한이 왜 필요한지, 설정으로 이동해야 하는지)를 띄워줍니다.
+
+디버깅을 위한 로그를 추가하여 문제가 발생했을 때 원인을 파악하기 쉽게 만듭니다.
+
+1단계: MainActivity.kt 전체 수정
+
+기존 MainActivity.kt 파일의 내용을 아래 코드로 완전히 교체하세요.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// MainActivity.kt
+package com.example.locationmarkerapp
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.example.locationmarkerapp.ui.MapScreen
+import com.example.locationmarkerapp.ui.MapViewModel
+import com.example.locationmarkerapp.ui.MapViewModelFactory
+import com.example.locationmarkerapp.ui.theme.LocationMarkerAppTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val mapViewModel: MapViewModel by viewModels {
+        MapViewModelFactory(application)
+    }
+
+    // 요청할 권한 목록 정의
+    private val permissionsToRequest = mutableListOf(
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+    }.toTypedArray()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            LocationMarkerAppTheme {
+                // 권한 상태 관리
+                var hasPermissions by remember { mutableStateOf(hasRequiredPermissions()) }
+                // 사용자에게 보여줄 다이얼로그 상태 관리
+                var dialogState by remember { mutableStateOf<PermissionDialogState>(PermissionDialogState.Hidden) }
+
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    Log.d("Permission", "Permission result received: $permissions")
+                    // 권한 결과 받은 후 상태 갱신
+                    hasPermissions = hasRequiredPermissions()
+                    if (!hasPermissions) {
+                        // 권한이 여전히 거부된 경우, '다시 묻지 않음' 상태인지 확인
+                        if (!shouldShowRationale()) {
+                            // 사용자가 '다시 묻지 않음'을 선택했으므로 설정으로 유도
+                            dialogState = PermissionDialogState.GoToSettings
+                        }
+                    } else {
+                        // 모든 권한을 얻었으면 작업 실행
+                        mapViewModel.fetchCurrentLocation()
+                    }
+                }
+
+                // 앱 시작 시 한 번만 권한 확인 및 요청
+                LaunchedEffect(Unit) {
+                    if (!hasPermissions) {
+                        Log.d("Permission", "Requesting permissions on launch")
+                        permissionLauncher.launch(permissionsToRequest)
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MapScreen(
+                        viewModel = mapViewModel,
+                        hasPermission = hasPermissions,
+                        onRequestPermission = {
+                            Log.d("Permission", "Button clicked. Has permissions: $hasPermissions")
+                            if (hasPermissions) {
+                                mapViewModel.fetchCurrentLocation()
+                            } else {
+                                // 사용자가 직접 거부한 적이 있는지 확인
+                                if (shouldShowRationale()) {
+                                    // 권한이 왜 필요한지 설명하는 다이얼로그 표시
+                                    dialogState = PermissionDialogState.ShowRationale
+                                } else {
+                                    // 처음 요청하거나, '다시 묻지 않음' 상태일 때
+                                    Log.d("Permission", "Launching permission request from button")
+                                    permissionLauncher.launch(permissionsToRequest)
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // 상태에 따라 적절한 다이얼로그 표시
+                when (dialogState) {
+                    PermissionDialogState.ShowRationale -> {
+                        PermissionRationaleDialog(
+                            onConfirm = {
+                                dialogState = PermissionDialogState.Hidden
+                                permissionLauncher.launch(permissionsToRequest)
+                            },
+                            onDismiss = { dialogState = PermissionDialogState.Hidden }
+                        )
+                    }
+                    PermissionDialogState.GoToSettings -> {
+                        GoToSettingsDialog(
+                            onConfirm = {
+                                dialogState = PermissionDialogState.Hidden
+                                // 앱 설정 화면으로 이동
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                    startActivity(this)
+                                }
+                            },
+                            onDismiss = { dialogState = PermissionDialogState.Hidden }
+                        )
+                    }
+                    PermissionDialogState.Hidden -> { /* 아무것도 안함 */ }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 다른 화면(예: 설정)에서 돌아왔을 때 권한 상태를 다시 확인하는 것이 좋음
+        // Compose의 State를 직접 바꾸기보다 ViewModel을 통해 이벤트를 전달하는 것이 더 나은 패턴이지만,
+        // 여기서는 설명을 위해 간단한 구조를 유지합니다.
+    }
+    
+    // 현재 필요한 모든 권한을 가지고 있는지 확인
+    private fun hasRequiredPermissions(): Boolean {
+        return permissionsToRequest.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    // 사용자에게 권한이 왜 필요한지 설명해야 하는지 확인 (한 번이라도 거부한 경우 true)
+    private fun shouldShowRationale(): Boolean {
+        return permissionsToRequest.any {
+            ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+    }
+}
+
+// 다이얼로그 상태를 나타내는 sealed class
+sealed class PermissionDialogState {
+    object Hidden : PermissionDialogState()
+    object ShowRationale : PermissionDialogState()
+    object GoToSettings : PermissionDialogState()
+}
+
+// 권한이 왜 필요한지 설명하는 다이얼로그
+@Composable
+fun PermissionRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("권한 필요") },
+        text = { Text("현재 위치를 지도에 표시하기 위해 위치 권한이 필요합니다. 권한을 허용해주시겠습니까?") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("허용") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("거부") } }
+    )
+}
+
+// 설정으로 이동을 안내하는 다이얼로그
+@Composable
+fun GoToSettingsDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("권한 설정 필요") },
+        text = { Text("위치 권한이 영구적으로 거부되었습니다. 앱 기능 사용을 원하시면, 앱 설정에서 직접 위치 권한을 '항상 허용'으로 변경해주세요.") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("설정으로 이동") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
+    )
+}
+2단계: MapScreen.kt 확인 (수정 불필요)
+
+이전 답변의 MapScreen.kt 코드는 그대로 사용하시면 됩니다. MainActivity가 모든 복잡한 로직을 처리하고 MapScreen에는 간단한 hasPermission 상태와 onRequestPermission 콜백만 전달하므로 UI 코드가 깔끔하게 유지됩니다.
+
+3단계: 앱 완전 삭제 후 재설치 및 테스트
+
+가장 중요한 단계입니다. '다시 묻지 않음' 상태는 앱을 삭제하기 전까지 기기에 저장됩니다.
+
+에뮬레이터/실제 기기에서 기존 앱을 완전히 삭제(Uninstall)하세요.
+
+Android Studio에서 'Clean Project' (Build -> Clean Project)를 실행합니다.
+
+다시 앱을 빌드하고 설치합니다.
+
+이제 앱을 실행하면 LaunchedEffect에 의해 시작과 동시에 권한 요청 팝업이 나타나야 합니다.
+
+거부를 누르면: 버튼이 "권한 요청하기"로 유지됩니다. 다시 버튼을 누르면 shouldShowRationale이 true가 되어 "권한이 왜 필요한지" 묻는 다이얼로그가 뜹니다.
+
+거부하고 '다시 묻지 않음' 체크 후 다시 버튼을 누르면: shouldShowRationale이 false가 되어 "설정으로 이동" 다이얼로그가 뜹니다.
+
+이 수정된 코드는 안드로이드 권한 정책의 모든 엣지 케이스를 처리하므로, 문제가 해결될 것입니다. 만약 그래도 문제가 발생한다면, Logcat의 D/Permission 태그를 필터링하여 제가 추가한 로그가 어떻게 출력되는지 확인해보시기 바랍니다.
+
+
+--------------------------------------------------
+
+
+# user
+시작시 팝업이 뜨지 않고, 권한 요청하기 버튼을 눌러 팝업이 떠도 허용을 눌렀지만 아무 변화가 없습니다
+
+
+--------------------------------------------------
+
+
+# model
+네, 말씀해주신 현상은 Compose의 상태 관리와 안드로이드 생명주기(Lifecycle) 사이의 상호작용에서 발생하는 전형적인 문제입니다. 자세히 분석해 보겠습니다.
+
+문제의 핵심 원인
+
+상태 불일치: 사용자가 시스템 권한 팝업에서 '허용'을 누르면, 포커스가 잠시 시스템 UI로 갔다가 다시 앱으로 돌아옵니다. 이 때 Compose UI가 자동으로 상태를 재검사(re-check)하지 않기 때문에 hasPermission 값이 갱신되지 않습니다. 즉, 권한은 부여되었지만 UI는 여전히 권한이 없다고 인지하는 상태에 머무릅니다.
+
+시작 시 팝업 부재: LaunchedEffect(Unit)이 실행되는 시점에 hasPermissions가 어떤 이유로든 true로 잘못 평가되었거나, permissionLauncher가 준비되기 전에 호출되었을 가능성이 있습니다.
+
+이 문제를 해결하기 위해, 앱이 다시 활성화될 때(예: 권한 팝업이 닫힌 후) 권한 상태를 강제로 다시 확인하고 UI를 갱신하는 로직을 추가해야 합니다. 가장 확실한 방법은 안드로이드의 Lifecycle 이벤트를 관찰하는 것입니다.
+
+해결책: LifecycleObserver를 이용한 안정적인 상태 동기화
+
+아래의 수정된 MainActivity.kt 코드는 앱이 Resumed 상태가 될 때마다 권한을 다시 확인하여 UI 상태를 정확하게 동기화합니다. 이 방법이 가장 안정적이고 권장되는 방식입니다.
+
+1단계: MainActivity.kt 전체 코드 교체
+
+기존 MainActivity.kt 파일의 모든 내용을 아래 코드로 교체해주세요. 중요한 변경점에는 주석을 달아두었습니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// MainActivity.kt
+package com.example.locationmarkerapp
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.locationmarkerapp.ui.MapScreen
+import com.example.locationmarkerapp.ui.MapViewModel
+import com.example.locationmarkerapp.ui.MapViewModelFactory
+import com.example.locationmarkerapp.ui.theme.LocationMarkerAppTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val mapViewModel: MapViewModel by viewModels {
+        MapViewModelFactory(application)
+    }
+
+    // 요청할 권한 목록을 명확하게 정의
+    private val permissionsToRequest = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            LocationMarkerAppTheme {
+                // 권한 상태를 관리하는 State. 초기값은 현재 권한 상태로 설정.
+                var hasPermissions by remember {
+                    mutableStateOf(hasRequiredPermissions())
+                }
+
+                // 권한 요청 런처
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    // 런처의 콜백이 실행된 후, 권한 상태를 다시 확인하여 State를 갱신
+                    Log.d("PermissionCheck", "Launcher result received. Re-checking permissions.")
+                    hasPermissions = hasRequiredPermissions()
+                }
+
+                // =====================================================================
+                // ★★★★★ 핵심 수정 사항: Lifecycle Observer ★★★★★
+                // 앱이 화면에 다시 나타날 때(ON_RESUME)마다 권한 상태를 갱신합니다.
+                // 설정 화면에서 권한을 변경하고 돌아왔을 때도 UI가 즉시 반영됩니다.
+                // =====================================================================
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(key1 = lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            Log.d("PermissionCheck", "App is resumed. Re-checking permissions.")
+                            hasPermissions = hasRequiredPermissions()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                // 앱이 처음 시작될 때 권한이 없다면 요청
+                LaunchedEffect(Unit) {
+                    if (!hasRequiredPermissions()) {
+                        Log.d("PermissionCheck", "Initial permission check failed. Launching request.")
+                        permissionLauncher.launch(permissionsToRequest)
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MapScreen(
+                        viewModel = mapViewModel,
+                        hasPermission = hasPermissions, // 관찰된 최신 권한 상태를 전달
+                        onRequestPermission = {
+                            // 버튼 클릭 시 권한 요청
+                            Log.d("PermissionCheck", "Permission request button clicked.")
+                            permissionLauncher.launch(permissionsToRequest)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // 현재 포그라운드 위치 권한이 있는지 확인하는 함수
+    private fun hasRequiredPermissions(): Boolean {
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        
+        Log.d("PermissionCheck", "hasFine: $hasFineLocation, hasCoarse: $hasCoarseLocation")
+        return hasFineLocation || hasCoarseLocation
+    }
+}
+
+// MapScreen.kt와 다른 Dialog Composable들은 이전 답변과 동일하게 사용하면 됩니다.
+// 여기서는 MainActivity의 로직만 수정하면 됩니다.
+
+백그라운드 권한 관련: 백그라운드 위치 권한(ACCESS_BACKGROUND_LOCATION)은 포그라운드 권한과 동시에 요청할 수 없으며, 사용자에게 별도의 안내를 통해 설정으로 유도해야 합니다. 현재 문제는 포그라운드 권한 획득 자체이므로, 우선순위를 낮추고 포그라운드 권한 로직을 확실하게 수정했습니다. 위 코드가 정상 동작하면, 이전 답변의 백그라운드 권한 다이얼로그 로직을 다시 추가할 수 있습니다.
+
+2단계: 앱 데이터 삭제 및 재설치 (매우 중요)
+
+이전 테스트 과정에서 권한 상태가 기기에 캐시되어 있을 수 있습니다. 반드시 다음 순서를 지켜주세요.
+
+에뮬레이터 또는 실제 기기에서 앱을 완전히 제거(Uninstall) 합니다.
+
+Android Studio 메뉴에서 Build -> Clean Project를 실행합니다.
+
+다시 프로젝트를 실행하여 기기에 새로 설치합니다.
+
+3단계: 실행 및 확인
+
+앱 첫 실행: LaunchedEffect가 동작하여 시작과 동시에 권한 요청 팝업이 나타나야 합니다.
+
+'앱 사용 중에만 허용' 또는 '이번만 허용' 클릭: 권한 팝업이 사라지고 앱 화면으로 돌아옵니다.
+
+UI 변경 확인: ON_RESUME 이벤트가 발생하면서 LifecycleEventObserver가 동작합니다. hasPermissions 상태가 true로 변경되고, MapScreen이 리컴포지션(recomposition)되면서 버튼이 "현 위치 조회 및 저장"으로 즉시 변경되어야 합니다.
+
+만약 위 조치 후에도 문제가 발생한다면, Logcat에서 PermissionCheck 태그로 필터링하여 로그를 확인해주세요. 제가 추가한 로그들이 어떤 순서로, 어떤 값으로 출력되는지 보면 문제의 원인을 더 정확히 파악할 수 있습니다.
+
+
+--------------------------------------------------
+
+
+# user
+팝업은 잘 뜨는데 '현 위치 조회 및 저장'을 눌러도 마커가 나타나지 않고 저장 완료를 알 수 없습니다
+
+
+--------------------------------------------------
+
+
+#model
+네, 아주 좋은 지적입니다. 권한 획득 후 버튼을 눌렀을 때 아무런 반응이 없는 것은 다음 단계에서 문제가 발생하고 있다는 명확한 신호입니다.
+
+이 현상의 가장 유력한 원인은 다음과 같습니다.
+
+WorkManager 작업 실패: 백그라운드 작업(LocationWorker)이 시작되었지만, 내부 로직(예: 위치 정보 가져오기)에서 실패하여 Result.failure()를 반환하고 조용히 종료되는 경우입니다.
+
+위치 정보 획득 실패: 기기나 에뮬레이터의 GPS가 꺼져 있거나 위치를 특정할 수 없어 fusedLocationProviderClient가 null을 반환하는 경우입니다.
+
+데이터베이스 문제: 데이터는 저장되었으나, UI에 업데이트를 알리는 Flow가 제대로 동작하지 않는 경우입니다. (가능성은 낮음)
+
+피드백 부재: 사실 작업은 성공했지만, 사용자에게 "저장 완료"라는 피드백이 없어서 성공했는지 알 수 없는 경우일 수도 있습니다.
+
+이 문제들을 종합적으로 해결하기 위해 디버깅 로그를 대폭 강화하고, **사용자에게 명확한 피드백(Snackbar)**을 제공하며, 실행 환경을 점검하는 방향으로 코드를 수정하겠습니다.
+
+종합 해결 방안
+1단계: LocationWorker.kt 로그 강화 (가장 중요)
+
+Worker 내부의 어느 부분에서 실패하는지 정확히 파악하기 위해 로그를 추가합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// worker/LocationWorker.kt
+package com.example.locationmarkerapp.worker
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.example.locationmarkerapp.data.local.AppDatabase
+import com.example.locationmarkerapp.data.local.LocationEntity
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
+
+class LocationWorker(
+    private val context: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(context, workerParams) {
+
+    // ★★★ 디버깅을 위한 TAG 추가
+    private val TAG = "LocationWorker"
+
+    private val locationClient = LocationServices.getFusedLocationProviderClient(context)
+    private val locationDao = AppDatabase.getDatabase(context).locationDao()
+
+    override suspend fun doWork(): Result {
+        Log.d(TAG, "doWork: Worker started.")
+
+        // ★★★ Worker 내부에서 권한을 다시 한번 확인
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "doWork: Location permission NOT GRANTED inside worker.")
+            return Result.failure()
+        }
+        Log.d(TAG, "doWork: Location permission is granted.")
+
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "doWork: Trying to get current location...")
+                val location = getCurrentLocation()
+
+                if (location != null) {
+                    Log.d(TAG, "doWork: Location found: Lat=${location.latitude}, Lng=${location.longitude}")
+                    val locationEntity = LocationEntity(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                    locationDao.insertLocation(locationEntity)
+                    Log.d(TAG, "doWork: Location successfully saved to database.")
+                    Result.success()
+                } else {
+                    // ★★★ 위치 획득 실패 시 명확한 로그 출력
+                    Log.e(TAG, "doWork: Failed to get location, it was null.")
+                    Result.failure()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "doWork: Exception occurred.", e)
+                Result.failure()
+            }
+        }
+    }
+
+    private suspend fun getCurrentLocation(): android.location.Location? {
+        return suspendCoroutine { continuation ->
+            try {
+                locationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    CancellationTokenSource().token
+                ).addOnSuccessListener { location ->
+                    // ★★★ 성공/실패 시 모두 로그 남기기
+                    if (location == null) {
+                        Log.w(TAG, "getCurrentLocation: FusedLocationProvider returned null.")
+                    }
+                    continuation.resume(location)
+                }.addOnFailureListener { e ->
+                    Log.e(TAG, "getCurrentLocation: Location fetch failed.", e)
+                    continuation.resume(null)
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "getCurrentLocation: SecurityException.", e)
+                continuation.resume(null)
+            }
+        }
+    }
+}
+2단계: 사용자 피드백(Snackbar) 추가
+
+ViewModel이 WorkManager의 작업 상태를 추적하고, UI는 그 상태에 따라 Snackbar를 표시하도록 구조를 개선합니다.
+
+1. MapViewModel.kt 수정
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapViewModel.kt
+package com.example.locationmarkerapp.ui
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import com.example.locationmarkerapp.data.LocationRepository
+import com.example.locationmarkerapp.data.local.AppDatabase
+import com.example.locationmarkerapp.data.local.LocationEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+class MapViewModel(
+    private val repository: LocationRepository,
+    private val workManager: WorkManager // WorkManager 주입
+) : ViewModel() {
+
+    val locations: StateFlow<List<LocationEntity>> = repository.allLocations
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // ★★★ UI에 상태를 전달하기 위한 SharedFlow (Snackbar 메시지 등)
+    private val _workStatus = MutableSharedFlow<String>()
+    val workStatus = _workStatus.asSharedFlow()
+
+    fun fetchCurrentLocation() {
+        val workRequestId = repository.requestLocationUpdate()
+        observeWork(workRequestId)
+    }
+
+    // ★★★ WorkManager의 상태를 관찰하는 함수
+    private fun observeWork(workRequestId: UUID) {
+        viewModelScope.launch {
+            workManager.getWorkInfoByIdLiveData(workRequestId).observeForever { workInfo ->
+                if (workInfo != null) {
+                    when (workInfo.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            // 성공 시 메시지 전송
+                            viewModelScope.launch { _workStatus.emit("위치 정보가 저장되었습니다.") }
+                        }
+                        WorkInfo.State.FAILED -> {
+                            // 실패 시 메시지 전송
+                            viewModelScope.launch { _workStatus.emit("위치 정보 저장에 실패했습니다.") }
+                        }
+                        else -> { /* Enqueued, Running, Blocked, Cancelled */ }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ViewModelFactory도 WorkManager를 전달하도록 수정
+class MapViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MapViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            val database = AppDatabase.getDatabase(application)
+            val repository = LocationRepository(database.locationDao(), application)
+            val workManager = WorkManager.getInstance(application) // WorkManager 인스턴스
+            return MapViewModel(repository, workManager) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+2. LocationRepository.kt 수정 (작업 ID 반환)
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/LocationRepository.kt
+package com.example.locationmarkerapp.data
+
+import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.locationmarkerapp.data.local.LocationDao
+import com.example.locationmarkerapp.worker.LocationWorker
+import kotlinx.coroutines.flow.Flow
+import java.util.UUID // ★★★ UUID import
+
+class LocationRepository(
+    private val locationDao: LocationDao,
+    private val context: Context
+) {
+    val allLocations: Flow<List<com.example.locationmarkerapp.data.local.LocationEntity>> = locationDao.getAllLocations()
+
+    // ★★★ 작업 요청 후 ID를 반환하도록 수정
+    fun requestLocationUpdate(): UUID {
+        val workRequest = OneTimeWorkRequestBuilder<LocationWorker>().build()
+        WorkManager.getInstance(context).enqueue(workRequest)
+        return workRequest.id
+    }
+}
+
+3. MapScreen.kt 수정 (Snackbar 표시)
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapScreen.kt
+// ... imports
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.collectLatest
+
+@Composable
+fun MapScreen(
+    viewModel: MapViewModel,
+    hasPermission: Boolean,
+    onRequestPermission: () -> Unit
+) {
+    val locations by viewModel.locations.collectAsState()
+    val seoul = LatLng(37.5665, 126.9780)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(seoul, 10f)
+    }
+    
+    // ★★★ Snackbar를 제어하기 위한 상태
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // ★★★ ViewModel의 workStatus를 구독하여 Snackbar를 표시
+    LaunchedEffect(Unit) {
+        viewModel.workStatus.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // ★★★ Scaffold를 사용하여 SnackbarHost를 배치
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues) // Scaffold의 padding 적용
+        ) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState
+            ) {
+                locations.forEach { location ->
+                    Marker(
+                        state = MarkerState(position = LatLng(location.latitude, location.longitude)),
+                        title = "저장된 위치",
+                        snippet = "시간: ${location.timestamp}"
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // ... (이전과 동일)
+                Button(
+                    onClick = {
+                        if (hasPermission) {
+                            viewModel.fetchCurrentLocation()
+                        } else {
+                            onRequestPermission()
+                        }
+                    },
+                ) {
+                    val buttonText = if (hasPermission) "현 위치 조회 및 저장" else "권한 요청하기"
+                    Text(text = buttonText)
+                }
+            }
+        }
+    }
+}
+3단계: 실행 환경 확인 (매우 중요)
+
+코드가 완벽해도 환경이 준비되지 않으면 위치 정보를 가져올 수 없습니다.
+
+실제 기기:
+
+'설정 > 위치' 로 이동하여 위치 서비스가 활성화되어 있는지 확인합니다.
+
+정확도를 '높음'으로 설정합니다.
+
+안드로이드 에뮬레이터:
+
+에뮬레이터 오른쪽의 ... (Extended controls) 버튼을 클릭합니다.
+
+Location 탭으로 이동합니다.
+
+지도에서 특정 위치를 클릭하거나, 위도(Latitude)와 경도(Longitude)를 직접 입력합니다.
+
+Set Location 버튼을 눌러 에뮬레이터에 가상 위치를 설정합니다. 이 과정을 거치지 않으면 에뮬레이터는 위치를 알 수 없습니다.
+
+4단계: 디버깅 및 결과 확인
+
+앱 완전 삭제 후 재설치: 이전 상태가 꼬였을 수 있으므로 반드시 앱을 완전히 삭제하고 새로 설치합니다.
+
+Logcat 열기: Android Studio 하단의 Logcat 창을 열고, 필터에 LocationWorker를 입력합니다.
+
+'현 위치 조회 및 저장' 버튼 클릭:
+
+정상 동작 시: Logcat에 "Worker started" -> "permission is granted" -> "Location found" -> "saved to database" 순서로 로그가 찍히고, 화면 하단에 "위치 정보가 저장되었습니다." 라는 Snackbar가 나타나며 지도에 마커가 표시됩니다.
+
+위치 획득 실패 시: Logcat에 "Failed to get location, it was null" 또는 "Location fetch failed" 로그가 찍히고, 화면에 "위치 정보 저장에 실패했습니다." Snackbar가 나타납니다. -> 이 경우 3단계: 실행 환경 확인을 다시 점검해주세요.
+
+이제 이 수정 사항들을 적용하면, 버튼을 눌렀을 때의 동작 결과를 명확히 알 수 있고, 문제가 발생했다면 Logcat을 통해 정확한 원인을 파악할 수 있게 됩니다.
+
+
+--------------------------------------------------
+
+
+# user
+저장 된 위치 목록들을 볼 수 있는 화면도 추가해주세요
+
+
+--------------------------------------------------
+
+
+# model
+네, 알겠습니다. 저장된 위치 목록을 보여주는 화면을 추가하고, 두 화면 간의 이동을 구현하겠습니다. Jetpack Compose의 공식 내비게이션 라이브러리인 Navigation for Compose를 사용하여 깔끔하게 구현해 보겠습니다.
+
+전체적인 작업 흐름은 다음과 같습니다.
+
+Navigation 라이브러리 의존성 추가
+
+LocationListScreen (목록 화면) Composable 생성
+
+화면 경로(Route) 정의 및 NavHost 설정
+
+MapScreen에 목록 화면으로 이동하는 버튼 추가
+
+MainActivity에서 내비게이션 시스템 통합
+
+1단계: Navigation 의존성 추가
+
+app/build.gradle.kts 파일의 dependencies 블록에 다음 라인을 추가하고 Gradle Sync를 실행합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+dependencies {
+    // ... 기존 의존성들
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+}
+2단계: LocationListScreen.kt (목록 화면) 생성
+
+ui 패키지 안에 LocationListScreen.kt라는 새 파일을 만들고 아래 코드를 작성합니다. 이 화면은 ViewModel로부터 위치 목록을 받아 LazyColumn을 사용해 보여줍니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/LocationListScreen.kt
+package com.example.locationmarkerapp.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import com.example.locationmarkerapp.data.local.LocationEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LocationListScreen(
+    viewModel: MapViewModel,
+    navController: NavController
+) {
+    // ViewModel로부터 위치 목록을 State로 구독
+    val locations by viewModel.locations.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("저장된 위치 목록") },
+                navigationIcon = {
+                    // 뒤로가기 버튼
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "뒤로가기"
+                        )
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        if (locations.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("저장된 위치가 없습니다.")
+            }
+        } else {
+            // 스크롤 가능한 효율적인 목록
+            LazyColumn(
+                modifier = Modifier.padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(locations) { location ->
+                    LocationItem(location = location)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LocationItem(location: LocationEntity) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "저장 시간: ${formatTimestamp(location.timestamp)}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                Text(text = "위도: ", fontWeight = FontWeight.SemiBold)
+                Text(text = "%.6f".format(location.latitude))
+            }
+            Row {
+                Text(text = "경도: ", fontWeight = FontWeight.SemiBold)
+                Text(text = "%.6f".format(location.longitude))
+            }
+        }
+    }
+}
+
+// Long 타입의 timestamp를 사람이 읽기 쉬운 문자열로 변환
+private fun formatTimestamp(timestamp: Long): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+3단계: MapScreen.kt 수정 (내비게이션 기능 추가)
+
+기존 MapScreen에 Scaffold와 TopAppBar를 추가하여, 목록 화면으로 이동하는 아이콘 버튼을 만듭니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapScreen.kt
+package com.example.locationmarkerapp.ui
+
+// ... (기존 imports)
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.navigation.NavController
+import kotlinx.coroutines.flow.collectLatest
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MapScreen(
+    viewModel: MapViewModel,
+    hasPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    navController: NavController // ★★★ NavController를 파라미터로 받음
+) {
+    val locations by viewModel.locations.collectAsState()
+    val seoul = LatLng(37.5665, 126.9780)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(seoul, 10f)
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.workStatus.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("위치 마커 앱") },
+                actions = {
+                    // ★★★ 목록 화면으로 이동하는 아이콘 버튼
+                    IconButton(onClick = { navController.navigate("location_list") }) {
+                        Icon(
+                            imageVector = Icons.Default.List,
+                            contentDescription = "저장 목록 보기"
+                        )
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState
+            ) {
+                locations.forEach { location ->
+                    Marker(
+                        state = MarkerState(position = LatLng(location.latitude, location.longitude)),
+                        title = "저장된 위치",
+                        snippet = "시간: ${formatTimestamp(location.timestamp)}" // ★★★ 여기서도 시간 포맷 함수 재사용
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Button(
+                    onClick = {
+                        if (hasPermission) {
+                            viewModel.fetchCurrentLocation()
+                        } else {
+                            onRequestPermission()
+                        }
+                    },
+                ) {
+                    val buttonText = if (hasPermission) "현 위치 조회 및 저장" else "권한 요청하기"
+                    Text(text = buttonText)
+                }
+            }
+        }
+    }
+}
+
+// ★★★ MapScreen에서도 시간 포맷이 필요하므로, 동일한 함수 추가 또는 별도 파일로 분리
+private fun formatTimestamp(timestamp: Long): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+4단계: MainActivity.kt 수정 (내비게이션 시스템 통합)
+
+MainActivity의 setContent 블록을 수정하여, NavHost를 설정하고 화면 간의 전환을 관리하도록 변경합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// MainActivity.kt
+package com.example.locationmarkerapp
+
+// ... (기존 imports)
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.locationmarkerapp.ui.LocationListScreen
+
+class MainActivity : ComponentActivity() {
+    
+    // ... (기존 viewModel, permissionsToRequest)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            LocationMarkerAppTheme {
+                // ★★★ 내비게이션 컨트롤러 생성
+                val navController = rememberNavController()
+
+                // ... (기존 hasPermissions, permissionLauncher, LifecycleObserver 등은 동일)
+                var hasPermissions by remember { mutableStateOf(hasRequiredPermissions()) }
+                val permissionLauncher = rememberLauncherForActivityResult(/* ... */) { /* ... */ }
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(key1 = lifecycleOwner) { /* ... */ }
+
+                // ★★★ NavHost로 화면 전환을 관리
+                NavHost(navController = navController, startDestination = "map_screen") {
+                    // 지도 화면 경로 설정
+                    composable("map_screen") {
+                        MapScreen(
+                            viewModel = mapViewModel,
+                            hasPermission = hasPermissions,
+                            onRequestPermission = {
+                                permissionLauncher.launch(permissionsToRequest)
+                            },
+                            navController = navController // navController 전달
+                        )
+                    }
+
+                    // 위치 목록 화면 경로 설정
+                    composable("location_list") {
+                        LocationListScreen(
+                            viewModel = mapViewModel,
+                            navController = navController // navController 전달
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ... (기존 hasRequiredPermissions 함수)
+}
+최종 실행 및 확인
+
+앱을 다시 실행합니다.
+
+지도 화면: 상단 TopAppBar 오른쪽에 목록 아이콘이 보입니다.
+
+목록 아이콘 클릭: LocationListScreen으로 전환되어 "저장된 위치 목록"이라는 제목과 함께 리스트가 나타납니다. (처음에는 비어있음)
+
+뒤로가기 아이콘 클릭: 다시 지도 화면으로 돌아옵니다.
+
+위치 저장: 지도 화면에서 '현 위치 조회 및 저장' 버튼을 눌러 위치를 몇 개 저장합니다.
+
+다시 목록 아이콘 클릭: 이제 목록 화면에 방금 저장한 위치들이 위도, 경도, 저장 시간과 함께 표시되는 것을 확인할 수 있습니다.
+
+이제 지도 화면과 저장된 위치 목록 화면이 완벽하게 분리되고, 내비게이션을 통해 자유롭게 이동할 수 있는 기능이 완성되었습니다.
+
+
+--------------------------------------------------
+
+
+# user
+위치 조회시 로딩 스피너를 추가하고 완료시 해당 위치로 카메라를 이동하고 줌 하도록 하세요
+
+
+--------------------------------------------------
+
+
+# model
+네, 알겠습니다. 위치 조회 시 사용자 경험을 향상시키기 위해 로딩 스피너를 추가하고, 조회가 완료되면 해당 위치로 지도를 부드럽게 이동 및 줌하는 기능을 구현하겠습니다.
+
+이를 위해 ViewModel에서 로딩 상태를 관리하고, 지도 카메라를 프로그래매틱하게 제어해야 합니다.
+
+작업 흐름
+
+MapViewModel 수정: 로딩 상태(isLoading)와 새로 조회된 위치(newLocation)를 관리할 StateFlow를 추가합니다.
+
+LocationRepository 수정: WorkManager가 성공했을 때, 저장된 위치 정보를 반환하도록 수정합니다.
+
+MapScreen 수정:
+
+isLoading 상태에 따라 로딩 스피너(CircularProgressIndicator)를 표시합니다.
+
+newLocation 상태가 업데이트되면 LaunchedEffect를 사용하여 CameraPositionState를 애니메이션과 함께 변경합니다.
+
+1단계: MapViewModel 수정
+
+로딩 상태와 새로운 위치 정보를 UI에 전달할 수 있도록 StateFlow를 추가합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapViewModel.kt
+package com.example.locationmarkerapp.ui
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import com.example.locationmarkerapp.data.LocationRepository
+import com.example.locationmarkerapp.data.local.AppDatabase
+import com.example.locationmarkerapp.data.local.LocationEntity
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.*
+
+class MapViewModel(
+    private val repository: LocationRepository,
+    private val workManager: WorkManager
+) : ViewModel() {
+
+    val locations: StateFlow<List<LocationEntity>> = repository.allLocations
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    private val _workStatus = MutableSharedFlow<String>()
+    val workStatus = _workStatus.asSharedFlow()
+
+    // ★★★ 1. 로딩 상태를 관리하는 StateFlow 추가
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // ★★★ 2. 새로 추가된 위치 정보를 전달할 SharedFlow 추가
+    // StateFlow 대신 SharedFlow를 사용하여 일회성 이벤트를 전달
+    private val _newLocation = MutableSharedFlow<LocationEntity>()
+    val newLocation = _newLocation.asSharedFlow()
+
+
+    fun fetchCurrentLocation() {
+        // 로딩 시작
+        _isLoading.value = true
+        val workRequestId = repository.requestLocationUpdate()
+        observeWork(workRequestId)
+    }
+
+    private fun observeWork(workRequestId: UUID) {
+        // LiveData를 Flow로 변환하여 관찰
+        val workInfoFlow = workManager.getWorkInfoByIdFlow(workRequestId)
+        viewModelScope.launch {
+            workInfoFlow.collect { workInfo ->
+                if (workInfo != null) {
+                    when (workInfo.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            _isLoading.value = false // 로딩 종료
+                            _workStatus.emit("위치 정보가 저장되었습니다.")
+                            // ★★★ 3. 성공 시 DB에서 마지막 위치를 가져와 UI에 전달
+                            val lastLocation = repository.getLastLocation()
+                            if (lastLocation != null) {
+                                _newLocation.emit(lastLocation)
+                            }
+                        }
+                        WorkInfo.State.FAILED -> {
+                            _isLoading.value = false // 로딩 종료
+                            _workStatus.emit("위치 정보 저장에 실패했습니다.")
+                        }
+                        WorkInfo.State.RUNNING -> {
+                            // 이미 isLoading = true 이므로 별도 처리 필요 없음
+                            Log.d("MapViewModel", "Work is running...")
+                        }
+                        else -> { /* Enqueued, Blocked, Cancelled */ }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ViewModelFactory는 수정할 필요 없습니다.
+class MapViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    // ... (이전과 동일)
+}
+2단계: LocationRepository 및 LocationDao 수정
+
+WorkManager 작업 성공 후, 가장 최근에 저장된 위치 정보를 가져올 수 있는 함수를 추가합니다.
+
+1. LocationDao.kt 수정
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/local/LocationDao.kt
+package com.example.locationmarkerapp.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface LocationDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLocation(location: LocationEntity)
+
+    @Query("SELECT * FROM locations ORDER BY timestamp DESC")
+    fun getAllLocations(): Flow<List<LocationEntity>>
+    
+    // ★★★ 가장 최근에 저장된 위치 하나만 가져오는 쿼리 추가
+    @Query("SELECT * FROM locations ORDER BY id DESC LIMIT 1")
+    suspend fun getLastLocation(): LocationEntity?
+}
+
+참고: Room 버전에 따라 DB 스키마가 변경되었다고 판단하여 마이그레이션 오류가 발생할 수 있습니다. 개발 단계에서는 앱을 삭제 후 재설치하거나, AppDatabase.kt의 databaseBuilder에 .fallbackToDestructiveMigration()을 추가하면 편리합니다.
+
+2. LocationRepository.kt 수정
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// data/LocationRepository.kt
+package com.example.locationmarkerapp.data
+
+// ... (기존 imports)
+import com.example.locationmarkerapp.data.local.LocationEntity
+
+class LocationRepository(
+    private val locationDao: LocationDao,
+    private val context: Context
+) {
+    val allLocations: Flow<LocationEntity>> = locationDao.getAllLocations()
+
+    fun requestLocationUpdate(): UUID {
+        // ... (이전과 동일)
+    }
+
+    // ★★★ DAO에 추가한 함수를 호출하는 함수 추가
+    suspend fun getLastLocation(): LocationEntity? {
+        return locationDao.getLastLocation()
+    }
+}
+3단계: MapScreen.kt 수정
+
+로딩 스피너를 추가하고, 카메라 이동 로직을 구현합니다.
+
+code
+Kotlin
+download
+content_copy
+expand_less
+// ui/MapScreen.kt
+package com.example.locationmarkerapp.ui
+
+// ... (기존 imports)
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.maps.android.compose.CameraPositionState
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MapScreen(
+    viewModel: MapViewModel,
+    hasPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    navController: NavController
+) {
+    val locations by viewModel.locations.collectAsState()
+    // ★★★ ViewModel에서 로딩 상태 구독
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    val seoul = LatLng(37.5665, 126.9780)
+    // ★★★ 카메라 상태를 rememberCoroutineScope와 함께 제어하기 위해 cameraPositionState를 상위로 이동
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(seoul, 10f)
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    // 코루틴 스코프 생성 (카메라 애니메이션에 사용)
+    val coroutineScope = rememberCoroutineScope()
+
+    // ViewModel의 일회성 이벤트를 수신하는 LaunchedEffect
+    LaunchedEffect(Unit) {
+        // Snackbar 메시지 처리
+        viewModel.workStatus.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // ★★★ 새로운 위치가 발생했을 때 카메라를 이동시키는 LaunchedEffect
+    LaunchedEffect(Unit) {
+        viewModel.newLocation.collectLatest { location ->
+            coroutineScope.launch {
+                cameraPositionState.animate(
+                    update = CameraUpdateFactory.newLatLngZoom(
+                        LatLng(location.latitude, location.longitude),
+                        15f // 줌 레벨 (15 정도가 적당)
+                    ),
+                    durationMs = 1000 // 애니메이션 시간 (1초)
+                )
+            }
+        }
+    }
+
+    Scaffold(
+        // ... (TopAppBar, SnackbarHost 등은 이전과 동일)
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState // 상태 전달
+            ) {
+                // ... (마커 표시는 동일)
+            }
+            
+            // ... (하단 버튼 Column)
+
+            // ★★★ isLoading이 true일 때 로딩 스피너 오버레이 표시
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ... (formatTimestamp 함수는 동일)
+최종 실행 및 확인
+
+앱을 다시 실행합니다. (필요 시 앱 데이터 삭제 후 재설치)
+
+'현 위치 조회 및 저장' 버튼을 클릭합니다.
+
+클릭 즉시 화면 전체가 반투명한 검은색으로 덮이고, 중앙에 로딩 스피너가 나타납니다.
+
+WorkManager가 위치 조회를 완료하고 DB에 저장하면, 로딩 스피너가 사라집니다.
+
+동시에 "위치 정보가 저장되었습니다." 라는 Snackbar가 나타납니다.
+
+지도가 방금 저장된 위치로 부드럽게 이동하면서 줌 인(Zoom-in) 되는 애니메이션이 실행됩니다.
+
+새로운 마커가 해당 위치에 표시됩니다.
+
+이제 사용자는 위치를 조회하는 동안 시스템이 동작하고 있음을 명확히 인지할 수 있으며, 작업 완료 후에는 결과가 직관적으로 지도에 반영되어 훨씬 향상된 사용자 경험을 제공합니다.
+
+
